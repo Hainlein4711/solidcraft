@@ -580,3 +580,41 @@ fn a_definition_in_a_box_that_is_not_a_dimension_is_refused() {
         assert_eq!(h.app.tool.as_ref().unwrap().pts.len(), 1, "{command} {text}: the first point stays down");
     }
 }
+
+/// #7704: holding Alt while drawing a rectangle makes all sides equal length (a square) and
+/// applies an Equal constraint so only one dimension is needed.
+#[test]
+fn holding_alt_squares_rectangles_and_needs_only_one_typed_size() {
+    use solidcraft_engine::sketch::ConstraintKind;
+    for command in ["sketch.rectangle.two_point", "sketch.rectangle.center"] {
+        let mut h = Harness::new();
+        h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
+        h.step(&json!({"start": command})).unwrap();
+        h.step(&json!({"click": {"world": [0, 0, 0]}})).unwrap();
+        h.step(&json!({"move": {"world": [24, 10, 0]}, "alt": true})).unwrap();
+        let dims = &h.app.tool.as_ref().unwrap().dims;
+        let w: f64 = dims[0].value.parse().unwrap();
+        let hh: f64 = dims[1].value.parse().unwrap();
+        assert!((w - hh).abs() < 1e-6, "{command}: live boxes must match ({w} vs {hh})");
+        h.step(&json!({"text": "18"})).unwrap();
+        h.step(&json!({"key": "Enter"})).unwrap();
+        let state = h.app.session.world_state();
+        let sketch = state.sketch(h.app.session.active_sketch.unwrap()).unwrap();
+        assert!(sketch.sketch.constraints.iter().any(|c| matches!(c.kind, ConstraintKind::Equal { .. })), "{command}");
+        assert_eq!(sketch.profiles.len(), 1, "{command}");
+        assert!((sketch.profiles[0].area - 324.0).abs() < 1e-6, "{command}: {}", sketch.profiles[0].area);
+    }
+
+    let mut h = Harness::new();
+    h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
+    h.step(&json!({"start": "sketch.rectangle.three_point"})).unwrap();
+    h.step(&json!({"click": {"sketch": [0, 0]}})).unwrap();
+    h.step(&json!({"click": {"sketch": [20, 0]}})).unwrap();
+    h.step(&json!({"move": {"sketch": [20, 7]}, "alt": true})).unwrap();
+    h.step(&json!({"click": {"sketch": [20, 7]}, "alt": true})).unwrap();
+    let state = h.app.session.world_state();
+    let sketch = state.sketch(h.app.session.active_sketch.unwrap()).unwrap();
+    assert!(sketch.sketch.constraints.iter().any(|c| matches!(c.kind, ConstraintKind::Equal { .. })));
+    assert_eq!(sketch.profiles.len(), 1);
+    assert!((sketch.profiles[0].area - 400.0).abs() < 1e-6, "{}", sketch.profiles[0].area);
+}
